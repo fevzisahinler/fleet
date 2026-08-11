@@ -1,4 +1,7 @@
+import { SEVERITY_RANGE_INVALID_MSG } from "components/SeverityFilter/helpers";
+
 import {
+  CVSS_RANGE_HELP_MSG,
   EPSS_RANGE_HELP,
   EPSS_RANGE_HELP_MSG,
   EPSS_RANGE_INVALID_MSG,
@@ -91,6 +94,26 @@ describe("SoftwareFilters helpers", () => {
       expect(getSoftwareFilterApplyError(["os"], "-1", "")).toBe(
         EPSS_RANGE_HELP_MSG
       );
+    });
+
+    it("surfaces CVSS errors once the categories and EPSS are valid", () => {
+      expect(getSoftwareFilterApplyError(["os"], "", "", "7", "3")).toBe(
+        SEVERITY_RANGE_INVALID_MSG
+      );
+      expect(getSoftwareFilterApplyError(["os"], "", "", "11", "")).toBe(
+        CVSS_RANGE_HELP_MSG
+      );
+      expect(getSoftwareFilterApplyError(["os"], "", "", "5.55", "")).toBe(
+        CVSS_RANGE_HELP_MSG
+      );
+    });
+
+    it("returns null for a valid CVSS range", () => {
+      expect(
+        getSoftwareFilterApplyError(["os"], "", "", "0.1", "9.9")
+      ).toBeNull();
+      // Presets leave the raw bounds empty, which is always valid.
+      expect(getSoftwareFilterApplyError(["os"], "", "", "", "")).toBeNull();
     });
   });
 });

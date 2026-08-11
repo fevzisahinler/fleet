@@ -18,7 +18,13 @@ import DropdownWrapper from "components/forms/fields/DropdownWrapper";
 import { CustomOptionType } from "components/forms/fields/DropdownWrapper/DropdownWrapper";
 import Icon from "components/Icon";
 import TooltipWrapper from "components/TooltipWrapper";
-import CustomLink from "components/CustomLink";
+import {
+  CUSTOM_SEVERITY_VALUE,
+  findOptionBySeverityRange,
+  isSeverityActive,
+  SEVERITY_DROPDOWN_OPTIONS,
+  severityValueLabel,
+} from "components/SeverityFilter/helpers";
 
 import {
   IDataSet,
@@ -57,7 +63,35 @@ const DEFAULT_CHART_FILTERS: IChartFilterState = {
   knownExploit: false,
   epssMin: "",
   epssMax: "",
+  // The chart is filtered to critical severity by default. Bounds derive from
+  // the selected option unless it's Custom, so these stay empty for presets.
+  severity: "critical",
+  cvssMin: "",
+  cvssMax: "",
   excludeCVEs: [],
+};
+
+// Resolves the persisted cvss_min/cvss_max pair to a severity option, falling
+// back to Custom when the range doesn't match a preset. A partial range is a
+// Custom range too: cvss_min 7 with no max resolves to Custom 7–10.
+const seedSeverity = (defaults: IVulnExposureFilterDefaults) => {
+  if (defaults.cvss_min === undefined && defaults.cvss_max === undefined) {
+    return {
+      severity: DEFAULT_CHART_FILTERS.severity,
+      cvssMin: DEFAULT_CHART_FILTERS.cvssMin,
+      cvssMax: DEFAULT_CHART_FILTERS.cvssMax,
+    };
+  }
+  const option = findOptionBySeverityRange(
+    defaults.cvss_min,
+    defaults.cvss_max
+  );
+  const isCustom = option.value === CUSTOM_SEVERITY_VALUE;
+  return {
+    severity: option.value,
+    cvssMin: isCustom ? String(option.minSeverity ?? "") : "",
+    cvssMax: isCustom ? String(option.maxSeverity ?? "") : "",
+  };
 };
 
 // Seed the chart's initial filter state from the persisted, GitOps-managed
@@ -65,14 +99,13 @@ const DEFAULT_CHART_FILTERS: IChartFilterState = {
 // DEFAULT_CHART_FILTERS value, while a present field (including an explicit
 // empty software_filters list, meaning "no categories") is respected. EPSS
 // bounds are numbers (0–100) in the config and strings in the filter state.
-// cvss_min/cvss_max are intentionally NOT wired — there is no severity control
-// yet (#47326).
 export const buildInitialChartFilters = (
   defaults?: IVulnExposureFilterDefaults
 ): IChartFilterState => {
   if (!defaults) return DEFAULT_CHART_FILTERS;
   return {
     ...DEFAULT_CHART_FILTERS,
+    ...seedSeverity(defaults),
     softwareFilters:
       defaults.software_filters !== undefined
         ? [...defaults.software_filters]
@@ -108,6 +141,7 @@ const hasActiveSoftwareFilters = (filters: IChartFilterState): boolean =>
   filters.softwareFilters.length !== ALL_CVE_SOFTWARE_CATEGORY_VALUES.length ||
   filters.knownExploit ||
   isEpssActive(filters.epssMin, filters.epssMax) ||
+  isSeverityActive(filters.severity, filters.cvssMin, filters.cvssMax) ||
   filters.excludeCVEs.length > 0;
 
 // Human-readable "a, b, and c". Items must already be correctly cased —
@@ -146,7 +180,7 @@ export const hostFilterLines = (filters: IChartFilterState): string[] => {
   return lines;
 };
 
-const softwareFilterLines = (filters: IChartFilterState): string[] => {
+export const softwareFilterLines = (filters: IChartFilterState): string[] => {
   const lines: string[] = [];
   // Only surface category text when the user has actually narrowed the
   // selection — all categories are selected by default, so an unnarrowed
@@ -160,6 +194,17 @@ const softwareFilterLines = (filters: IChartFilterState): string[] => {
     lines.push(cats.length ? formatList(cats) : "No software categories");
   }
   if (filters.knownExploit) lines.push("Known exploits only");
+  if (isSeverityActive(filters.severity, filters.cvssMin, filters.cvssMax)) {
+    // Names the range, not just the band, so "Custom" isn't opaque and a preset
+    // states the scores it filters on — matching the closed dropdown's text.
+    lines.push(
+      `Severity: ${severityValueLabel(
+        filters.severity,
+        filters.cvssMin,
+        filters.cvssMax
+      )}`
+    );
+  }
   if (
     isEpssActive(filters.epssMin, filters.epssMax) ||
     filters.excludeCVEs.length > 0
@@ -257,16 +302,11 @@ const ChartCard = ({
       defaultChartType: "checkerboard",
       description: (
         <>
-          All critical vulnerabilities.
+          The number of hosts with at least one vulnerability matching the
+          chart&apos;s filters.
           <br />
           <br />
-          Want more control? Severity (CVSS) filter is{" "}
-          <CustomLink
-            newTab
-            text="coming soon "
-            variant="tooltip-link"
-            url="https://github.com/fleetdm/fleet/issues/47326"
-          />
+          Severity is filtered to critical by default.
         </>
       ),
       tooltipFormatter: ({ value }: { value: number }) =>
@@ -320,6 +360,38 @@ const ChartCard = ({
       chartFilters.epssMax !== "" &&
       Number(chartFilters.epssMax) < 100;
 
+    // Any severity spans the whole 0–10 range, so it sends no bounds at all,
+    // and neither does a Custom range with nothing entered. Presets take their
+    // bounds from the option; only Custom reads the raw score strings.
+    // filterEmptyParams drops undefined/""/null, so a legitimate 0 survives.
+    let severityMin: number | undefined;
+    let severityMax: number | undefined;
+    if (
+      isCVE &&
+      isSeverityActive(
+        chartFilters.severity,
+        chartFilters.cvssMin,
+        chartFilters.cvssMax
+      )
+    ) {
+      if (chartFilters.severity === CUSTOM_SEVERITY_VALUE) {
+        severityMin =
+          chartFilters.cvssMin !== ""
+            ? Number(chartFilters.cvssMin)
+            : undefined;
+        severityMax =
+          chartFilters.cvssMax !== ""
+            ? Number(chartFilters.cvssMax)
+            : undefined;
+      } else {
+        const option = SEVERITY_DROPDOWN_OPTIONS.find(
+          (o) => o.value === chartFilters.severity
+        );
+        severityMin = option?.minSeverity;
+        severityMax = option?.maxSeverity;
+      }
+    }
+
     return {
       // Add an extra day to ensure we get the full # of calendar days
       // represented in the chart, regardless of timezone.
@@ -348,6 +420,8 @@ const ChartCard = ({
       has_known_exploit: isCVE && chartFilters.knownExploit ? true : undefined,
       epss_min: epssMinActive ? Number(chartFilters.epssMin) / 100 : undefined,
       epss_max: epssMaxActive ? Number(chartFilters.epssMax) / 100 : undefined,
+      severity_min: severityMin,
+      severity_max: severityMax,
       exclude_vulnerabilities:
         isCVE && chartFilters.excludeCVEs.length
           ? chartFilters.excludeCVEs.join(",")

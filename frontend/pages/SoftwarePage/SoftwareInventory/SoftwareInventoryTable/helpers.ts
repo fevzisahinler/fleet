@@ -3,62 +3,11 @@ import stringUtils from "utilities/strings/stringUtils";
 import { tooltipTextWithLineBreaks } from "utilities/helpers";
 import numberUtils from "utilities/numbers";
 
+// The severity options and range matching live with the shared SeverityFilter
+// component — import them from there rather than through this module.
+import { findOptionBySeverityRange } from "components/SeverityFilter/helpers";
+
 const { isValidNumber } = numberUtils;
-
-export const CUSTOM_SEVERITY_OPTION = {
-  disabled: false,
-  label: "Custom severity",
-  value: "custom",
-  helpText: "Custom CVSS score range",
-  minSeverity: undefined,
-  maxSeverity: undefined,
-};
-
-export const ANY_SEVERITY_OPTION = {
-  disabled: false,
-  label: "Any severity",
-  value: "any",
-  helpText: "CVSS score 0-10",
-  minSeverity: 0,
-  maxSeverity: 10,
-};
-
-export const SEVERITY_DROPDOWN_OPTIONS = [
-  ANY_SEVERITY_OPTION,
-  {
-    disabled: false,
-    label: "Critical severity",
-    value: "critical",
-    helpText: "CVSS score 9.0-10",
-    minSeverity: 9.0,
-    maxSeverity: 10,
-  },
-  {
-    disabled: false,
-    label: "High severity",
-    value: "high",
-    helpText: "CVSS score 7.0-8.9",
-    minSeverity: 7.0,
-    maxSeverity: 8.9,
-  },
-  {
-    disabled: false,
-    label: "Medium severity",
-    value: "medium",
-    helpText: "CVSS score 4.0-6.9",
-    minSeverity: 4.0,
-    maxSeverity: 6.9,
-  },
-  {
-    disabled: false,
-    label: "Low severity",
-    value: "low",
-    helpText: "CVSS score 0.1-3.9",
-    minSeverity: 0.1,
-    maxSeverity: 3.9,
-  },
-  CUSTOM_SEVERITY_OPTION,
-];
 
 export const getSoftwareVulnFiltersFromQueryParams = (
   queryParams: QueryParams
@@ -106,34 +55,6 @@ export const buildSoftwareVulnFiltersQueryParams = (
       max_cvss_score: maxCvssScore.toString(),
     }),
   };
-};
-
-export const findOptionBySeverityRange = (
-  minSeverityValue: number | undefined,
-  maxSeverityValue: number | undefined
-) => {
-  // Check for "empty" (undefined/null) min and max, treat as "Any severity"
-  if (
-    (minSeverityValue === undefined || minSeverityValue === null) &&
-    (maxSeverityValue === undefined || maxSeverityValue === null)
-  ) {
-    return ANY_SEVERITY_OPTION;
-  }
-
-  const severityOption = SEVERITY_DROPDOWN_OPTIONS.find(
-    (option) =>
-      option.minSeverity === minSeverityValue &&
-      option.maxSeverity === maxSeverityValue
-  ) || {
-    disabled: true,
-    label: "Custom severity",
-    value: "custom",
-    helpText: `CVSS score ${minSeverityValue || 0}-${maxSeverityValue || 10}`,
-    minSeverity: minSeverityValue || 0,
-    maxSeverity: maxSeverityValue || 10,
-  };
-
-  return severityOption;
 };
 
 export const getVulnFilterRenderDetails = (

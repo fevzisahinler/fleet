@@ -1,3 +1,5 @@
+import { validateSeverityScores } from "components/SeverityFilter/helpers";
+
 // EPSS inputs are entered as a 0–100 percentage; the chart API takes 0.0–1.0.
 export const EPSS_MIN_PCT = 0;
 export const EPSS_MAX_PCT = 100;
@@ -11,6 +13,8 @@ export const EPSS_RANGE_INVALID_MSG =
 // category instead of none. Block Apply and surface this message instead.
 export const NO_CATEGORIES_MSG = "Select at least one software category.";
 export const EPSS_RANGE_HELP_MSG = "Enter EPSS values from 0 to 100.";
+export const CVSS_RANGE_HELP_MSG =
+  "Enter CVSS scores from 0 to 10 in 0.1 increments.";
 
 // Returns an error string when the raw value is out of the 0–100 range, or null
 // when it's empty (unset) or valid.
@@ -57,7 +61,9 @@ export const isEpssActive = (min: string, max: string): boolean => {
 export const getSoftwareFilterApplyError = (
   categories: string[],
   epssMin: string,
-  epssMax: string
+  epssMax: string,
+  cvssMin = "",
+  cvssMax = ""
 ): string | null => {
   if (categories.length === 0) {
     return NO_CATEGORIES_MSG;
@@ -67,6 +73,16 @@ export const getSoftwareFilterApplyError = (
   }
   if (hasEpssErrors(epssMin, epssMax)) {
     return EPSS_RANGE_HELP_MSG;
+  }
+  const severityErrors = validateSeverityScores({
+    minScore: cvssMin,
+    maxScore: cvssMax,
+  });
+  if (severityErrors.rangeInvalid) {
+    return severityErrors.rangeInvalid;
+  }
+  if (severityErrors.minScore || severityErrors.maxScore) {
+    return CVSS_RANGE_HELP_MSG;
   }
   return null;
 };

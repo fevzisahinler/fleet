@@ -14,6 +14,7 @@ import React from "react";
 import Select, {
   components,
   DropdownIndicatorProps,
+  FormatOptionLabelMeta,
   GroupBase,
   MenuPlacement,
   OptionProps,
@@ -132,6 +133,16 @@ export interface IDropdownWrapper {
    * not infer any of these on its own; without a value here screen readers
    * announce a bare "combobox". */
   ariaLabel?: string;
+  /** Renders an option's display text. Note this only reaches the selected
+   * value in the closed control: the menu uses the custom Option component
+   * above, which renders `option.label` (and `helpText`) directly and ignores
+   * what react-select formats. Use it to show more detail on the active
+   * selection than the menu list needs — check `meta.context === "value"` if
+   * you want to be explicit about that. */
+  formatOptionLabel?: (
+    data: CustomOptionType,
+    meta: FormatOptionLabelMeta<CustomOptionType>
+  ) => React.ReactNode;
   /** Tooltip explaining why the dropdown is disabled. Shown above the control, on hover over the control only (not the label or help text), and only while `isDisabled` is true. */
   disabledTooltipContent?: React.ReactNode;
   /** Defaults to "auto" so a menu near the viewport bottom flips upward
@@ -386,6 +397,7 @@ const DropdownWrapper = ({
   ariaLabel,
   disabledTooltipContent,
   menuPlacement = "auto",
+  formatOptionLabel,
 }: IDropdownWrapper) => {
   const wrapperClassNames = classnames(baseClass, className, {
     [`${baseClass}__table-filter`]: variant === "table-filter",
@@ -472,6 +484,7 @@ const DropdownWrapper = ({
       }}
       value={getCurrentValue()}
       onChange={handleChange}
+      formatOptionLabel={formatOptionLabel}
       isDisabled={isDisabled}
       noOptionsMessage={() => customNoOptionsMessage ?? "No results found"}
       tabIndex={isDisabled ? -1 : 0} // Ensures disabled dropdown has no keyboard accessibility

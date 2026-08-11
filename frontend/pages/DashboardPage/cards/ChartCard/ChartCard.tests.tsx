@@ -6,10 +6,12 @@ import { http, HttpResponse } from "msw";
 import { createCustomRenderer, baseUrl } from "test/test-utils";
 import mockServer from "test/mock-server";
 import { ALL_CVE_SOFTWARE_CATEGORY_VALUES } from "interfaces/charts";
+import { SeverityValue } from "components/SeverityFilter/helpers";
 
 import ChartCard, {
   buildInitialChartFilters,
   hostFilterLines,
+  softwareFilterLines,
 } from "./ChartCard";
 
 // Mock ResizeObserver for CheckerboardViz
@@ -225,6 +227,110 @@ describe("ChartCard", () => {
     expect(requestedPlatforms).toBeNull();
     expect(screen.queryByText("Filtered")).not.toBeInTheDocument();
   });
+
+  describe("vulnerability exposure severity filter", () => {
+    // Captures the query params of the last /charts/cve request.
+    const useCveHandler = () => {
+      const captured: { params: URLSearchParams | null } = { params: null };
+      mockServer.use(
+        http.get(baseUrl("/charts/:metric"), ({ params, request }) => {
+          if (params.metric === "cve") {
+            captured.params = new URL(request.url).searchParams;
+          }
+          return HttpResponse.json(
+            generateMockChartResponse(params.metric as string, 30)
+          );
+        })
+      );
+      return captured;
+    };
+
+    const renderPremium = (
+      props: React.ComponentProps<typeof ChartCard> = {}
+    ) =>
+      createCustomRenderer({
+        withBackendMock: true,
+        context: { app: { isPremiumTier: true } },
+      })(<ChartCard {...props} />);
+
+    // react-select renders its options as plain divs, so target them by the
+    // testid the shared custom Option component sets rather than by role.
+    const selectDataset = async (
+      user: ReturnType<typeof renderPremium>["user"],
+      label: string
+    ) => {
+      // Let the initial chart request settle first — the re-render it triggers
+      // closes the menu again if it lands between opening and picking.
+      await waitFor(() => {
+        expect(document.querySelectorAll("rect").length).toBeGreaterThan(0);
+      });
+      await user.click(screen.getByRole("combobox", { name: "dataset" }));
+      const option = screen
+        .getAllByTestId("dropdown-option")
+        .find((el) => el.textContent?.startsWith(label));
+      if (!option) {
+        throw new Error(`No dataset option matching "${label}"`);
+      }
+      await user.click(option);
+    };
+
+    it("defaults to critical severity and lights the Filtered pill", async () => {
+      const captured = useCveHandler();
+      const { user } = renderPremium();
+
+      await selectDataset(user, "Vulnerability exposure");
+
+      await waitFor(() => expect(captured.params).not.toBeNull());
+      expect(captured.params?.get("severity_min")).toBe("9");
+      expect(captured.params?.get("severity_max")).toBe("10");
+
+      // The pill's tooltip text is covered by the softwareFilterLines tests
+      // below — react-tooltip does not mount its content in jsdom, so there is
+      // nothing to assert against here beyond the pill itself.
+      expect(screen.getByText("Filtered")).toBeInTheDocument();
+    });
+
+    it("sends the raw bounds of a custom range, including a 0 minimum", async () => {
+      const captured = useCveHandler();
+      const { user } = renderPremium({
+        filterDefaults: { cvss_min: 0, cvss_max: 6.5 },
+      });
+
+      await selectDataset(user, "Vulnerability exposure");
+
+      await waitFor(() => expect(captured.params).not.toBeNull());
+      // 0 is a real bound, not an empty value to be dropped from the query.
+      expect(captured.params?.get("severity_min")).toBe("0");
+      expect(captured.params?.get("severity_max")).toBe("6.5");
+    });
+
+    it("sends no severity bounds for Any severity", async () => {
+      const captured = useCveHandler();
+      const { user } = renderPremium({
+        filterDefaults: { cvss_min: 0, cvss_max: 10 },
+      });
+
+      await selectDataset(user, "Vulnerability exposure");
+
+      await waitFor(() => expect(captured.params).not.toBeNull());
+      expect(captured.params?.get("severity_min")).toBeNull();
+      expect(captured.params?.get("severity_max")).toBeNull();
+
+      expect(screen.queryByText("Filtered")).not.toBeInTheDocument();
+    });
+
+    it("no longer advertises the severity filter as coming soon", async () => {
+      useCveHandler();
+      const { user } = renderPremium();
+
+      await selectDataset(user, "Vulnerability exposure");
+
+      expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/All critical vulnerabilities/i)
+      ).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe("buildInitialChartFilters", () => {
@@ -236,7 +342,34 @@ describe("buildInitialChartFilters", () => {
     expect(filters.knownExploit).toBe(false);
     expect(filters.epssMin).toBe("");
     expect(filters.epssMax).toBe("");
+    expect(filters.severity).toBe("critical");
+    expect(filters.cvssMin).toBe("");
+    expect(filters.cvssMax).toBe("");
     expect(filters.excludeCVEs).toEqual([]);
+  });
+
+  it("keeps the critical severity default when no CVSS bounds are persisted", () => {
+    const filters = buildInitialChartFilters({ has_known_exploit: true });
+    expect(filters.severity).toBe("critical");
+    expect(filters.cvssMin).toBe("");
+    expect(filters.cvssMax).toBe("");
+  });
+
+  it("seeds a preset when the persisted CVSS bounds match one", () => {
+    expect(
+      buildInitialChartFilters({ cvss_min: 7, cvss_max: 8.9 })
+    ).toMatchObject({ severity: "high", cvssMin: "", cvssMax: "" });
+    expect(
+      buildInitialChartFilters({ cvss_min: 0, cvss_max: 10 })
+    ).toMatchObject({ severity: "any", cvssMin: "", cvssMax: "" });
+  });
+
+  it("seeds a custom range when only one CVSS bound is persisted", () => {
+    expect(buildInitialChartFilters({ cvss_min: 7 })).toMatchObject({
+      severity: "custom",
+      cvssMin: "7",
+      cvssMax: "10",
+    });
   });
 
   it("seeds present fields and falls back per-field for absent ones", () => {
@@ -267,6 +400,62 @@ describe("buildInitialChartFilters", () => {
       exclude_vulnerabilities: ["CVE-2025-50897"],
     });
     expect(filters.excludeCVEs).toEqual(["CVE-2025-50897"]);
+  });
+});
+
+describe("softwareFilterLines", () => {
+  const filtersWithSeverity = (
+    severity: SeverityValue,
+    cvssMin = "",
+    cvssMax = ""
+  ) => ({
+    ...buildInitialChartFilters(undefined),
+    severity,
+    cvssMin,
+    cvssMax,
+  });
+
+  it("names the active severity and its CVSS range on its own line", () => {
+    expect(softwareFilterLines(filtersWithSeverity("critical"))).toEqual([
+      "Severity: Critical (9.0 to 10)",
+    ]);
+    expect(softwareFilterLines(filtersWithSeverity("low"))).toEqual([
+      "Severity: Low (0.1 to 3.9)",
+    ]);
+  });
+
+  it("spells out the range behind a Custom selection", () => {
+    // "Severity: Custom" alone would not tell the reader what is filtered.
+    expect(
+      softwareFilterLines(filtersWithSeverity("custom", "2.5", "6"))
+    ).toEqual(["Severity: Custom (2.5 to 6)"]);
+    // A half-open range names the bound it widens to, matching what is sent.
+    expect(
+      softwareFilterLines(filtersWithSeverity("custom", "2.5", ""))
+    ).toEqual(["Severity: Custom (2.5 to 10)"]);
+  });
+
+  it("omits the severity line for Any severity", () => {
+    expect(softwareFilterLines(filtersWithSeverity("any"))).toEqual([]);
+  });
+
+  it("omits the severity line for a Custom range with no bounds entered", () => {
+    // Nothing is sent to the API in this state, so claiming a severity filter
+    // would describe the chart as narrower than it is.
+    expect(softwareFilterLines(filtersWithSeverity("custom"))).toEqual([]);
+    // A single bound is enough to be a real filter.
+    expect(
+      softwareFilterLines(filtersWithSeverity("custom", "", "6"))
+    ).toEqual(["Severity: Custom (0 to 6)"]);
+  });
+
+  it("keeps severity separate from the generic Advanced filters line", () => {
+    expect(
+      softwareFilterLines({
+        ...filtersWithSeverity("high"),
+        excludeCVEs: ["CVE-2025-0001"],
+      })
+    ).toEqual(["Severity: High (7.0 to 8.9)", "Advanced filters"]);
   });
 });
 

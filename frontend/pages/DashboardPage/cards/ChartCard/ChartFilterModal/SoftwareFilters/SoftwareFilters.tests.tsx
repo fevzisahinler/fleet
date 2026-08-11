@@ -17,16 +17,20 @@ const emptyVulnsHandler = http.get(baseUrl("/vulnerabilities"), () =>
   })
 );
 
-const baseProps = {
+const baseProps: React.ComponentProps<typeof SoftwareFilters> = {
   categories: [...ALL_CVE_SOFTWARE_CATEGORY_VALUES],
   knownExploit: false,
   epssMin: "",
   epssMax: "",
+  severity: "critical",
+  cvssMin: "",
+  cvssMax: "",
   excludeCVEs: [],
   setCategories: jest.fn(),
   setKnownExploit: jest.fn(),
   setEpssMin: jest.fn(),
   setEpssMax: jest.fn(),
+  setSeverity: jest.fn(),
   setExcludeCVEs: jest.fn(),
 };
 
@@ -100,8 +104,32 @@ describe("SoftwareFilters", () => {
     await user.click(screen.getByRole("button", { name: /Advanced options/i }));
 
     expect(screen.getByText("Probability of exploit")).toBeInTheDocument();
+    expect(screen.getByText("Severity")).toBeInTheDocument();
     expect(
       screen.getByText("Exclude vulnerabilities (CVEs)")
+    ).toBeInTheDocument();
+  });
+
+  it("renders the severity filter with the current selection and no score inputs for a preset", async () => {
+    const { user } = render(<SoftwareFilters {...baseProps} />);
+
+    await user.click(screen.getByRole("button", { name: /Advanced options/i }));
+
+    expect(screen.getByText("Critical (9.0 to 10)")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Min score/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Max score/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the custom score inputs and surfaces CVSS range errors", async () => {
+    const { user } = render(
+      <SoftwareFilters {...baseProps} severity="custom" cvssMin="11" />
+    );
+
+    await user.click(screen.getByRole("button", { name: /Advanced options/i }));
+
+    expect(screen.getByLabelText(/Max score/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("Must be from 0-10 in 0.1 increments")
     ).toBeInTheDocument();
   });
 

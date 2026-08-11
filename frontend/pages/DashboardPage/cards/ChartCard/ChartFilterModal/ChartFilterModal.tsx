@@ -21,6 +21,13 @@ import SearchField from "components/forms/fields/SearchField";
 // @ts-ignore
 import Dropdown from "components/forms/fields/Dropdown";
 
+import { ISeverityFilterValue } from "components/SeverityFilter";
+import {
+  ANY_SEVERITY_VALUE,
+  isSeverityActive,
+  SeverityValue,
+} from "components/SeverityFilter/helpers";
+
 import SoftwareFilters from "./SoftwareFilters";
 import {
   getSoftwareFilterApplyError,
@@ -56,6 +63,13 @@ export interface IChartFilterState {
   knownExploit: boolean;
   epssMin: string;
   epssMax: string;
+  // Severity (CVSS). `severity` is the SeverityFilter option value; cvssMin /
+  // cvssMax are the raw 0–10 score strings behind it. Only Custom sends them to
+  // the API — presets derive their bounds from the option — but a preset still
+  // carries its bounds here so switching to Custom can refine them.
+  severity: SeverityValue;
+  cvssMin: string;
+  cvssMax: string;
   excludeCVEs: string[];
 }
 
@@ -92,6 +106,11 @@ const ChartFilterModal = ({
   );
   const [epssMin, setEpssMin] = useState<string>(filters.epssMin);
   const [epssMax, setEpssMax] = useState<string>(filters.epssMax);
+  const [severityFilter, setSeverityFilter] = useState<ISeverityFilterValue>({
+    severity: filters.severity,
+    minScore: filters.cvssMin,
+    maxScore: filters.cvssMax,
+  });
   const [excludeCVEs, setExcludeCVEs] = useState<string[]>(filters.excludeCVEs);
 
   const [selectedLabelIDs, setSelectedLabelIDs] = useState<number[]>(
@@ -201,6 +220,9 @@ const ChartFilterModal = ({
       knownExploit,
       epssMin,
       epssMax,
+      severity: severityFilter.severity,
+      cvssMin: severityFilter.minScore,
+      cvssMax: severityFilter.maxScore,
       excludeCVEs,
     });
   };
@@ -220,6 +242,14 @@ const ChartFilterModal = ({
     setKnownExploit(false);
     setEpssMin("");
     setEpssMax("");
+    // Clear all resets severity to Any, not to the Critical seed — otherwise
+    // the filters would still be active and the Clear all button would never
+    // disappear after being clicked.
+    setSeverityFilter({
+      severity: ANY_SEVERITY_VALUE,
+      minScore: "",
+      maxScore: "",
+    });
     setExcludeCVEs([]);
   };
 
@@ -245,6 +275,11 @@ const ChartFilterModal = ({
     (softwareFilters.length !== ALL_CVE_SOFTWARE_CATEGORY_VALUES.length ||
       knownExploit ||
       isEpssActive(epssMin, epssMax) ||
+      isSeverityActive(
+        severityFilter.severity,
+        severityFilter.minScore,
+        severityFilter.maxScore
+      ) ||
       excludeCVEs.length > 0);
 
   const hasFilters =
@@ -257,9 +292,15 @@ const ChartFilterModal = ({
   const tabIndex = hostFilterMode === "include" ? 1 : 0;
 
   // Block Apply when the Software tab is invalid — no category selected or bad
-  // EPSS input — and surface the reason as a tooltip.
+  // EPSS/CVSS input — and surface the reason as a tooltip.
   const applyError = isCVE
-    ? getSoftwareFilterApplyError(softwareFilters, epssMin, epssMax)
+    ? getSoftwareFilterApplyError(
+        softwareFilters,
+        epssMin,
+        epssMax,
+        severityFilter.minScore,
+        severityFilter.maxScore
+      )
     : null;
   const applyDisabled = applyError !== null;
   const applyTooltip = applyError ?? "";
@@ -399,11 +440,15 @@ const ChartFilterModal = ({
                   knownExploit={knownExploit}
                   epssMin={epssMin}
                   epssMax={epssMax}
+                  severity={severityFilter.severity}
+                  cvssMin={severityFilter.minScore}
+                  cvssMax={severityFilter.maxScore}
                   excludeCVEs={excludeCVEs}
                   setCategories={setSoftwareFilters}
                   setKnownExploit={setKnownExploit}
                   setEpssMin={setEpssMin}
                   setEpssMax={setEpssMax}
+                  setSeverity={setSeverityFilter}
                   setExcludeCVEs={setExcludeCVEs}
                 />
               </div>

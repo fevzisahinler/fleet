@@ -15,6 +15,13 @@ import RevealButton from "components/buttons/RevealButton";
 import SearchField from "components/forms/fields/SearchField";
 // @ts-ignore
 import InputField from "components/forms/fields/InputField";
+import SeverityFilter, {
+  ISeverityFilterValue,
+} from "components/SeverityFilter";
+import {
+  SeverityValue,
+  validateSeverityScores,
+} from "components/SeverityFilter/helpers";
 
 import TooltipWrapper from "components/TooltipWrapper/TooltipWrapper";
 import { getEpssError, NO_CATEGORIES_MSG } from "./helpers";
@@ -30,11 +37,15 @@ interface ISoftwareFiltersProps {
   knownExploit: boolean;
   epssMin: string;
   epssMax: string;
+  severity: SeverityValue;
+  cvssMin: string;
+  cvssMax: string;
   excludeCVEs: string[];
   setCategories: (categories: string[]) => void;
   setKnownExploit: (value: boolean) => void;
   setEpssMin: (value: string) => void;
   setEpssMax: (value: string) => void;
+  setSeverity: (next: ISeverityFilterValue) => void;
   setExcludeCVEs: (cves: string[]) => void;
 }
 
@@ -44,11 +55,15 @@ const SoftwareFilters = ({
   knownExploit,
   epssMin,
   epssMax,
+  severity,
+  cvssMin,
+  cvssMax,
   excludeCVEs,
   setCategories,
   setKnownExploit,
   setEpssMin,
   setEpssMax,
+  setSeverity,
   setExcludeCVEs,
 }: ISoftwareFiltersProps): JSX.Element => {
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -211,6 +226,19 @@ const SoftwareFilters = ({
               />
             </div>
           </div>
+
+          {/* SeverityFilter renders its own label and spacing, and its label
+          already matches __section-title, so it needs no section wrapper. */}
+          <SeverityFilter
+            severity={severity}
+            minScore={cvssMin}
+            maxScore={cvssMax}
+            onChange={setSeverity}
+            errors={validateSeverityScores({
+              minScore: cvssMin,
+              maxScore: cvssMax,
+            })}
+          />
 
           <div className={`${baseClass}__exclude-cves`}>
             <h3 className={`${baseClass}__section-title`}>
